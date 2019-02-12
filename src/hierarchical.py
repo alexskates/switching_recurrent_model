@@ -1,16 +1,16 @@
-# import os
-# import time
-# import datetime
-# import argparse
-# import numpy as np
-# import torch
-# import torch.nn as nn
-# import torch.optim as optim
-# import torch.nn.functional as F
-# from torch.autograd import Variable
-# from scipy.io import savemat
-# from src.utils import gumbel_softmax, reparam_normal, loglik_mixture, offset, \
-#     fit_covariances, DataLoader, gaussian_kl_div
+import os
+import time
+import datetime
+import argparse
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+from torch.autograd import Variable
+from scipy.io import savemat
+from src.utils import gumbel_softmax, reparam_normal, loglik_mixture, offset, \
+    fit_covariances, DataLoader, gaussian_kl_div
 # from src.modules import TCNInference, RNNInference, TCNPrior, RNNPrior, \
 #     MarkovPrior, UninformativePrior
 #

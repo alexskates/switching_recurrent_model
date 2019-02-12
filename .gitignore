@@ -4,3 +4,6 @@
 # Ignore extra stuff like .DS_Store, .ideas, etc
 .DS_Store
 .idea/
+
+# Ignore shell script for updating the cluster
+*.sh
