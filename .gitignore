@@ -1,0 +1,11 @@
+# Ignore all ipynb_checkpoints
+.ipynb_checkpoints/
+
+# Ignore all experiments for now
+experiments/
+
+# Ignore all the data
+data/
+
+# Ignore all the results
+results/
