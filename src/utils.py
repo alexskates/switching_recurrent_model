@@ -1,9 +1,19 @@
 import torch
 import numpy as np
+import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
 
 _eps = 1e-20
+
+
+def init_weights(m):
+    if isinstance(m, nn.Linear):
+        nn.init.xavier_normal_(m.weight.data)
+    elif isinstance(m, nn.GRU):
+        for name, p in m.named_parameters():
+            if 'weight' in name:
+                nn.init.xavier_normal_(p)
 
 
 def sample_gumbel(shape):
@@ -107,8 +117,7 @@ def offset(data):
 
     data: tensor in the shape [batch_size, seq_length, data_dim]
     """
-    data_0 = Variable(
-        data.data.new(data.size(0), 1, data.size(2)).normal_())
+    data_0 = Variable(data.data.new(data.size(0), 1, data.size(2)).normal_())
     # Need to softmax to ensure it is a valid distribution
     data_0 = F.softmax(data_0, dim=-1)
     return torch.cat((data_0, data[:, :-1]), dim=1)

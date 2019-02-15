@@ -4,10 +4,10 @@ import argparse
 import numpy as np
 import torch
 import json
-from src.utils import fit_covariances
-from src.models import GumbelEncoder, GumbelDecoder, gumbel_vfe, nll
-from src.dataloader import SequenceData
-from src.train import train, infer
+from utils import fit_covariances
+from models import GumbelEncoder, GumbelDecoder, gumbel_vfe, nll
+from dataloader import SequenceData
+from train import train, infer
 
 _eps = 1e-20
 

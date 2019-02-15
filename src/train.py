@@ -43,20 +43,38 @@ def run_epoch(data_loader, encoder, decoder, encoder_optimiser,
 
         for x in x_seq.split(params.net_length, 1):
 
-            if h is not None: h = Variable(h.data)
-            if h_0 is not None: h_0 = Variable(h_0.data)
+            if h is not None:
+                if type(h) == list:
+                    h = [Variable(h_element.data) for h_element in h]
+                else:
+                    h = Variable(h.data)
+            if h_0 is not None:
+                if type(h_0) == list:
+                    h_0 = [Variable(h_0_element.data) for h_0_element in h_0]
+                else:
+                    h_0 = Variable(h_0.data)
 
             if params.cuda:
                 x = x.cuda()
-                if h is not None: h = h.cuda()
-                if h_0 is not None: h_0 = h_0.cuda()
+                if h is not None:
+                    if type(h) == list:
+                        h = [h_element.cuda() for h_element in h]
+                    else:
+                        h = h.cuda()
+                if h_0 is not None:
+                    if type(h_0) == list:
+                        h_0 = [h_0_element.cuda() for h_0_element in h_0]
+                    else:
+                        h_0 = h_0.cuda()
 
             logits_z, q, h = encoder(x, h)
             c, E, p, h_0 = decoder(temp, logits_z, h_0)
 
             loss = loss_fn(x, E, c, q, p).sum()
             losses.append(loss.item() / x.shape[0])
-            lvs.append(q['alpha'][1].data.cpu().numpy())
+
+            if 'alpha' in q:
+                lvs.append(q['alpha'][1].data.cpu().numpy())
 
             if backward:
                 loss.backward()
