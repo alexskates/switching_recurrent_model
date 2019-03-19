@@ -7,7 +7,7 @@ import json
 from utils import fit_covariances
 from models import GumbelEncoder, GumbelDecoder, gumbel_vfe, nll
 from dataloader import SequenceData
-from train import train, infer
+from train import train, infer, sample
 
 _eps = 1e-20
 
@@ -39,13 +39,15 @@ def init(data, params):
         decoder.W.requires_grad = False
 
     # Look to see if a checkpoint has already been specified
-    if (params.encoder_fn is not None) and (params.decoder_fn is not None):
+    if params.encoder_fn is not None:
         encoder_path = os.path.join(params.checkpoint_dir, params.encoder_fn)
-        decoder_path = os.path.join(params.checkpoint_dir, params.decoder_fn)
         assert os.path.exists(encoder_path), '{} does not exist'.format(encoder_path)
-        assert os.path.exists(decoder_path), '{} does not exist'.format(decoder_path)
         # Load the checkpoint
         encoder.load_state_dict(torch.load(encoder_path, map_location={'cuda:0': 'cpu'}))
+
+    if params.decoder_fn is not None:
+        decoder_path = os.path.join(params.checkpoint_dir, params.decoder_fn)
+        assert os.path.exists(decoder_path), '{} does not exist'.format(decoder_path)
         decoder.load_state_dict(torch.load(decoder_path, map_location={'cuda:0': 'cpu'}))
 
     return encoder, decoder
@@ -77,10 +79,12 @@ def main(params):
         # Need to save some parameters so we don't overwrite them
         do_train = params.train
         do_infer = params.infer
+        do_sample = params.sample
         do_decode = params.decode
         epochs = params.num_epochs
         encoder_fn = params.encoder_fn
         decoder_fn = params.decoder_fn
+        lr = params.lr
 
         # Load params to ensure that we're using the same params
         with open(os.path.join(params.result_dir, 'params.json')) as f:
@@ -96,10 +100,12 @@ def main(params):
         params = ParamDict2Obj(params)
         params.train = do_train
         params.infer = do_infer
+        params.sample = do_sample
         params.decode = do_decode
         params.num_epochs = epochs
         params.encoder_fn = encoder_fn
         params.decoder_fn = decoder_fn
+        params.lr = lr
     else:
         if not os.path.exists(params.result_dir):
             os.makedirs(params.result_dir)
@@ -149,6 +155,9 @@ def main(params):
         test_sequences = SequenceData(params.data_dir, filenames=test_fns)
         infer(test_sequences, encoder, decoder, gumbel_vfe, nll, params)
 
+    if params.sample:
+        sample(decoder, params)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
@@ -184,9 +193,11 @@ if __name__ == "__main__":
     parser.add_argument('--cuda',               '-x', action='store_true')
     parser.add_argument('--bidirectional',     '-bi', action='store_true')
     parser.add_argument('--prior',             '-pr', default='rnn')
+    parser.add_argument('--prior-diag',        '-pd', type=int, default=1)
     parser.add_argument('--inference',        '-inf', default='rnn')
     parser.add_argument('--train',             '-tr', action='store_true')
     parser.add_argument('--infer',              '-i', action='store_true')
+    parser.add_argument('--sample',           '-smp', action='store_true')
     parser.add_argument('--decode',           '-dss', action='store_true')
 
     args = parser.parse_args()

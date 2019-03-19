@@ -21,7 +21,7 @@ def time_since(since, percent):
     return '%s (- %s)' % (as_minutes(s), as_minutes(rs))
 
 
-def run_epoch(data_loader, encoder, decoder, encoder_optimiser,
+def run_epoch(i, data_loader, encoder, decoder, encoder_optimiser,
           decoder_optimiser, loss_fn, params, backward=True):
 
     if backward:
@@ -79,8 +79,8 @@ def run_epoch(data_loader, encoder, decoder, encoder_optimiser,
             if backward:
                 loss.backward()
 
-                # nn.utils.clip_grad_norm_(encoder.parameters(), 10)
-                # nn.utils.clip_grad_norm_(decoder.parameters(), 10)
+                nn.utils.clip_grad_norm_(encoder.parameters(), 10)
+                nn.utils.clip_grad_norm_(decoder.parameters(), 10)
 
                 encoder_optimiser.step()
                 decoder_optimiser.step()
@@ -114,30 +114,35 @@ def train(train_sequence, valid_sequence, encoder, decoder, loss_fn, params):
     encoder_optimiser = optim.Adam(
         filter(lambda p: p.requires_grad, encoder.parameters()), lr=params.lr)
     decoder_optimiser = optim.Adam(
-        filter(lambda p: p.requires_grad, decoder.parameters()), lr=params.lr)
+        filter(lambda p: p.requires_grad, decoder.parameters()),
+        lr=params.lr)
 
     try:
         for i in range(params.num_epochs):
-            train_loss, lvs = run_epoch(data_loader=train_loader,
-                                   encoder=encoder,
-                                   decoder=decoder,
-                                   encoder_optimiser=encoder_optimiser,
-                                   decoder_optimiser=decoder_optimiser,
-                                   loss_fn=loss_fn,
-                                   params=params,
-                                   backward=True)
+            train_loss, lvs = run_epoch(
+                i,
+                data_loader=train_loader,
+                encoder=encoder,
+                decoder=decoder,
+                encoder_optimiser=encoder_optimiser,
+                decoder_optimiser=decoder_optimiser,
+                loss_fn=loss_fn,
+                params=params,
+                backward=True)
             train_losses.append(np.mean(train_loss))
             lvs_all.extend(lvs)
 
             if i % params.valid_every == 0:
-                valid_loss, _ = run_epoch(data_loader=valid_loader,
-                                       encoder=encoder,
-                                       decoder=decoder,
-                                       encoder_optimiser=None,
-                                       decoder_optimiser=None,
-                                       loss_fn=loss_fn,
-                                       params=params,
-                                       backward=False)
+                valid_loss, _ = run_epoch(
+                    i,
+                    data_loader=valid_loader,
+                    encoder=encoder,
+                    decoder=decoder,
+                    encoder_optimiser=None,
+                    decoder_optimiser=None,
+                    loss_fn=loss_fn,
+                    params=params,
+                    backward=False)
                 valid_losses.append(np.mean(valid_loss))
 
                 if len(valid_losses) > 1:
@@ -224,14 +229,29 @@ def infer(eval_sequence, encoder, decoder, loss_fn, nll_fn, params):
 
         for i, x in enumerate(x_seq.split(params.net_length, 1)):
 
-            if h is not None: h = Variable(h.data)
-            if h_0 is not None: h_0 = Variable(h_0.data)
-            x = Variable(x, requires_grad=True)
+            if h is not None:
+                if type(h) == list:
+                    h = [Variable(h_element.data) for h_element in h]
+                else:
+                    h = Variable(h.data)
+            if h_0 is not None:
+                if type(h_0) == list:
+                    h_0 = [Variable(h_0_element.data) for h_0_element in h_0]
+                else:
+                    h_0 = Variable(h_0.data)
 
             if params.cuda:
                 x = x.cuda()
-                if h is not None: h = h.cuda()
-                if h_0 is not None: h_0 = h_0.cuda()
+                if h is not None:
+                    if type(h) == list:
+                        h = [h_element.cuda() for h_element in h]
+                    else:
+                        h = h.cuda()
+                if h_0 is not None:
+                    if type(h_0) == list:
+                        h_0 = [h_0_element.cuda() for h_0_element in h_0]
+                    else:
+                        h_0 = h_0.cuda()
 
             logits, q, h = encoder(x, h)
             c, E, p, h_0 = decoder(temp, logits, h_0)
@@ -264,3 +284,36 @@ def infer(eval_sequence, encoder, decoder, loss_fn, nll_fn, params):
     np.save(join(params.result_dir, 'nll_all.npy'), nll)
     np.save(join(params.result_dir, 'inferred_covariances.npy'), c.data.cpu().numpy())
     np.save(join(params.result_dir, 'eval_loss.npy'), np.array(eval_losses))
+    if hasattr(params, 'prior') and params.prior == 'markov':
+        np.save(join(params.result_dir, 'trans_prob.npy'),
+                decoder.prior.trans_prob().data.cpu().numpy())
+
+
+# Sample from a category and starting letter
+def sample(decoder, params, num_samples=200):
+
+    print('Sampling a total of {} sequences'.format(num_samples))
+
+    decoder.eval()
+
+    samples = torch.FloatTensor(num_samples, params.seq_length * 10, params.n_latent)
+    temp = torch.Tensor([params.temp])
+
+    if params.cuda:
+        temp = temp.cuda()
+        samples = samples.cuda()
+
+    with torch.no_grad():  # no need to track history in sampling
+        # random primer -- has to be one-hot
+        primer = torch.FloatTensor(num_samples, 1, params.n_latent)
+        primer.zero_()
+        primer[np.arange(num_samples), 0, np.random.randint(0, params.n_latent, num_samples)] = 1
+
+        if params.cuda:
+            primer = primer.cuda()
+
+        samples = decoder.sample_sequence(temp, primer, params.seq_length * 10)
+
+    print('Sampling complete')
+
+    np.save(join(params.result_dir, 'samples.npy'), samples.cpu().data.numpy())

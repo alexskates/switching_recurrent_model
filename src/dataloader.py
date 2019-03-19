@@ -17,9 +17,11 @@ class SequenceData(Dataset):
 
         # Load the raw data
         for fn in self.filenames:
-            self._xs_all.append(
-                np.load(os.path.join(folder_dataset, fn)).astype(np.float32)
-            )
+            tmp = np.load(os.path.join(folder_dataset, fn)).astype(np.float32)
+            if tmp.shape[1] < tmp.shape[0]:
+                self._xs_all.append(tmp)
+            else:
+                self._xs_all.append(tmp.T)
 
         # If seq_length=0, then use the length of the smallest sequence
         if self.seq_length == 0:

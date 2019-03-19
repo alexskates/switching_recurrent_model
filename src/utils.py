@@ -77,11 +77,13 @@ def loglik_mixture(x, z, c):
     """
     Calculate the log likelihood of a mixture of distributions
     """
-    x = x.contiguous().view(-1, x.shape[-1]).unsqueeze(0)
-    x = x.repeat(c.shape[0], 1, 1)
+    x = x.contiguous().view(-1, 1, 1, x.shape[-1])
+    x = x.repeat(1, c.shape[0], 1, 1)
+
     from torch.distributions.multivariate_normal import MultivariateNormal
     pdf = MultivariateNormal(
-        x.data.new_zeros(x.shape[-1]), c.unsqueeze(1)).log_prob(x).t()
+        x.data.new_zeros(x.shape[-1]), c.unsqueeze(1)).log_prob(x).squeeze(-1)
+
     z_reshape = z.view(-1, c.shape[0]) + _eps
     return log_sum_exp(pdf + z_reshape.log()).reshape(*z.shape[:-1])
 

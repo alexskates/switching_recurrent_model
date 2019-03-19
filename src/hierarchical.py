@@ -37,21 +37,32 @@ def init(data, params):
         data, params.n_latent[-1], covariances, params.use_pca_cov_model,
         params.n_pc)
 
-    encoder = FactoredHierarchicalEncoder(params)
+    encoder = HierarchicalEncoder(params)
     decoder = HierarchicalDecoder(params)
 
     if not params.use_pca_cov_model:
         decoder.W.requires_grad = False
 
     # Look to see if a checkpoint has already been specified
-    if (params.encoder_fn is not None) and (params.decoder_fn is not None):
+    if params.encoder_fn is not None:
         encoder_path = os.path.join(params.checkpoint_dir, params.encoder_fn)
-        decoder_path = os.path.join(params.checkpoint_dir, params.decoder_fn)
         assert os.path.exists(encoder_path), '{} does not exist'.format(encoder_path)
+        # Load the checkpoint
+        if params.cuda:
+            encoder.load_state_dict(torch.load(encoder_path))
+        else:
+            encoder.load_state_dict(torch.load(encoder_path, map_location={'cuda:0': 'cpu'}))
+
+    if params.decoder_fn is not None:
+        decoder_path = os.path.join(params.checkpoint_dir, params.decoder_fn)
         assert os.path.exists(decoder_path), '{} does not exist'.format(decoder_path)
         # Load the checkpoint
-        encoder.load_state_dict(torch.load(encoder_path, map_location={'cuda:0': 'cpu'}))
-        decoder.load_state_dict(torch.load(decoder_path, map_location={'cuda:0': 'cpu'}))
+        # Load the checkpoint
+        if params.cuda:
+            decoder.load_state_dict(torch.load(decoder_path))
+        else:
+            decoder.load_state_dict(torch.load(decoder_path, map_location={
+                'cuda:0': 'cpu'}))
 
     return encoder, decoder
 
@@ -129,7 +140,7 @@ def main(params):
                     fn[:2] != '__']
         assert len(test_fns) > 0, 'No evaluation files exist'
         test_sequences = SequenceData(params.data_dir, filenames=test_fns)
-        infer(test_sequences, encoder, decoder, gumbel_vfe, nll, params)
+        infer(test_sequences, encoder, decoder, hierarchical_vfe, nll, params)
 
 
 if __name__ == "__main__":

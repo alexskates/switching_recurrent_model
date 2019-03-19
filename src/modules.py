@@ -164,7 +164,7 @@ class MarkovSoftmax(nn.Module):
         # Initialise it with uniform probabilities
         # (softmax it below)
         self.t = nn.Parameter(torch.ones(params.n_latent, params.n_latent) +
-                              torch.eye(params.n_latent) * 5)
+                              torch.eye(params.n_latent) * params.prior_diag)
         self.t.requires_grad = True
         self.requires_softmax = True
 

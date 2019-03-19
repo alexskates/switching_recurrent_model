@@ -95,6 +95,33 @@ class GumbelDecoder(nn.Module):
         c += torch.eye(c.shape[-1], dtype=z.dtype, device=z.data.device) * 1e-4
         return c, {'z': z}, {'z': p_z}, h
 
+    def sample_sequence(self, tau, primer, max_length=1000):
+        # Generate new sequences.
+
+        if len(primer.shape) == 1:
+            primer = primer.unsqueeze(0)
+
+        generated_z = Variable(primer.new(
+            primer.shape[0], max_length, primer.shape[-1]).zero_())
+        generated_z[:, :primer.shape[1]] = primer
+
+        h = self.init_hidden(primer.shape[0])
+
+        # "Prime" the network using the priming sequence
+        for t in range(primer.shape[1]):
+            input_tensor = generated_z[:, t].unsqueeze(1)
+            _, _, h = self.prior((input_tensor, h))  # Only
+            # need h
+
+        # Now generate new sequences
+        for t in range(primer.shape[1], max_length):
+            input_tensor = generated_z[:, t-1].unsqueeze(1)
+            logits_z_t, _, h = self.prior((input_tensor, h))
+            generated_z[:, t] = gumbel_softmax(logits_z_t, tau,
+                                               hard=True).squeeze(1)
+
+        return generated_z
+
     def covariance(self):
         cov = self.W.matmul(self.B)
         cov = cov.matmul(torch.transpose(cov, -1, -2))
@@ -139,7 +166,8 @@ class FactoredHierarchicalEncoder(nn.Module):
         super(FactoredHierarchicalEncoder, self).__init__()
 
         # For purposes of saving the results
-        self.distributions = {'z': params.n_latent}
+        self.distributions = {'z_%i' % i: latent for (i, latent) in
+                              enumerate(params.n_latent)}
 
         self.num_directions = 2 if params.bidirectional else 1
 
@@ -147,7 +175,7 @@ class FactoredHierarchicalEncoder(nn.Module):
         # For the variational distribution, we need to reverse this
         self.input_sizes = params.n_input
         self.output_sizes = sum(params.n_latent)
-        self.latent_dims = list(reversed(params.n_latent))
+        self.latent_dims = params.n_latent
         self.n_hidden = params.n_hidden[0]
 
         self.inference = gumbel_layer(self.input_sizes, self.n_hidden,
@@ -183,7 +211,9 @@ class FactoredHierarchicalEncoder(nn.Module):
             q_layers.append(F.softmax(layer_logits, dim=-1))
             q_samples.append(gumbel_softmax(layer_logits, 0.5, hard=False))
 
-        return q_samples, {'z': q_layers}, h
+        return q_samples, \
+               {'z_%i' % i: layer for i, layer in enumerate(q_layers)}, \
+               h
 
     def init_hidden(self, batch_size):
         weight = next(self.parameters()).data
@@ -205,7 +235,8 @@ class HierarchicalEncoder(nn.Module):
         super(HierarchicalEncoder, self).__init__()
 
         # For purposes of saving the results
-        self.distributions = {'z': params.n_latent}
+        self.distributions = {'z_%i' % i: latent for (i, latent) in
+                              enumerate(params.n_latent)}
 
         self.num_directions = 2 if params.bidirectional else 1
 
@@ -245,12 +276,14 @@ class HierarchicalEncoder(nn.Module):
 
             # Softmax to get the "true" variational distribution, GS to get a
             # differentiable approximation to the variational distribution
-            q_layers.append(F.softmax(logits, dim=-1))
-            q_samples.append(gumbel_softmax(logits, 0.5, hard=False))
+            q_layers.insert(0, F.softmax(logits, dim=-1))
+            q_samples.insert(0, gumbel_softmax(logits, 0.5, hard=False))
 
-            in_ = q_layers[i]  # Each layer is conditioned on the previous
+            in_ = q_samples[0]  # Each layer is conditioned on the previous
 
-        return q_samples, {'z': q_layers}, h_new
+        return q_samples, \
+               {'z_%i' % i: layer for i, layer in enumerate(q_layers)}, \
+               h_new
 
     def init_hidden(self, batch_size):
         weight = next(self.parameters()).data
@@ -283,12 +316,18 @@ class HierarchicalDecoder(nn.Module):
     def forward(self, tau, z_samples, h=None):
 
         # Do the "top" layer -- just simple matrix multiplication
-        z_current_layer = offset(z_samples[-1])
-        p_z = [z_current_layer.matmul(self.trans_prob()[0])]
+        z_offset_current_layer = offset(z_samples[0])
+        p_z = [z_offset_current_layer.matmul(self.trans_prob()[0])]
+
+        # Sample from this distribution
+        z_current_layer = gumbel_softmax(p_z[0].log(), 0.5, hard=False)
 
         for i, trans_prob in enumerate(self.trans_prob()[1:]):
+            # p(z_t^d|z_{t-1}^d, z_t^{d-1})
+            # E.g. whilst you want samples from the previous time step for
+            # this layer, for the previous layer, you want the current layer
             z_previous_layer = z_current_layer
-            z_current_layer = offset(z_samples[-(2+i)])
+            z_current_layer = offset(z_samples[i+1])
 
             # The actual trans prob to use in this layer is indexed by the
             # variable in the layer above this one. As the variables are
@@ -304,13 +343,18 @@ class HierarchicalDecoder(nn.Module):
                                      z_current_layer, trans_prob)
             p_z.append(p_z_layer)
 
+            z_current_layer = gumbel_softmax(p_z_layer.log(), 0.5, hard=False)
+
         # Covariances
         c = self.covariance()
         # Ensure is positive definite
         c += torch.eye(c.shape[-1], dtype=z_current_layer.dtype,
                        device=z_current_layer.data.device) * 1e-4
 
-        return c, {'z': z_samples}, {'z': p_z}, h
+        return c, \
+               {'z_%i' % i: layer for (i, layer) in enumerate(z_samples)}, \
+               {'z_%i' % i: layer for (i, layer) in enumerate(p_z)}, \
+               h
 
     def covariance(self):
         cov = self.W.matmul(self.B)
@@ -434,22 +478,31 @@ class GumbelNormalDecoder(nn.Module):
 def hierarchical_vfe(x, expected_values, covariances, variational_distribution,
                      prior_distribution):
     # Log likelihood
-    ll = loglik_mixture(x.contiguous(),
-                        expected_values['z'][0].contiguous(),
-                        covariances)
+    # Get production state samples
+    prod_layer = len(expected_values) - 1
+    prod_samples = expected_values['z_%i' % prod_layer].contiguous()
 
-    vfe = -ll
+    ll = loglik_mixture(x.contiguous(), prod_samples, covariances)
+
+    kl = 0
 
     # KL divergence for each hierarchical layer
-    for i in range(len(prior_distribution['z'])):
-        q_z = variational_distribution['z'][-(i+1)].contiguous()
-        p_z = prior_distribution['z'][i].contiguous()
+    for p_z, q_z in zip(prior_distribution.values(),
+                        variational_distribution.values()):
+        q_z = q_z.contiguous()
+        p_z = p_z.contiguous()
         log_q_z = torch.log(q_z + _eps)
         log_p_z = torch.log(p_z + _eps)
         kl_layer = torch.sum(q_z * (log_q_z - log_p_z), -1)
-        vfe = vfe + kl_layer
+        kl = kl + kl_layer
 
-    return vfe
+    return -ll + kl
+
+
+def heirarchical_nll(x, expected_values, covariances):
+    prod_layer = len(expected_values) - 1
+    prod_samples = expected_values['z_%i' % prod_layer].contiguous()
+    return loglik_mixture(x.contiguous(), prod_samples, covariances)
 
 
 def gumbel_vfe(x, expected_values, covariances, variational_distribution,
@@ -468,6 +521,13 @@ def gumbel_vfe(x, expected_values, covariances, variational_distribution,
 
     elbo = ll - kl  # ELBO / variational free energy
     return -elbo
+
+
+def gumbel_nll(x, expected_values, covariances):
+    return loglik_mixture(
+        x.contiguous(),
+        expected_values['z'].contiguous(),
+        covariances)
 
 
 def gumbel_normal_vfe(x, expected_values, covariances, variational_distribution,
@@ -492,8 +552,14 @@ def gumbel_normal_vfe(x, expected_values, covariances, variational_distribution,
 
 
 def nll(x, expected_values, covariances):
-    # Log likelihood
-    ll = loglik_mixture(x.contiguous(),
-                        expected_values['z'].contiguous(),
-                        covariances)
-    return -ll
+
+    # Get the production states
+    # If not hierarchical, then will just be z
+    if 'z' in expected_values.keys():
+        production_states = expected_values['z'].contiguous()
+    else:
+        prod_layer = len(expected_values) - 1
+        production_states = expected_values['z_%i' % prod_layer].contiguous()
+
+    # Neg log likelihood
+    return -loglik_mixture(x.contiguous(), production_states, covariances)
