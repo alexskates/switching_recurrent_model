@@ -84,6 +84,8 @@ def main(params):
         epochs = params.num_epochs
         encoder_fn = params.encoder_fn
         decoder_fn = params.decoder_fn
+        data_dir = params.data_dir
+        model_dir = params.result_dir
         lr = params.lr
 
         # Load params to ensure that we're using the same params
@@ -98,6 +100,8 @@ def main(params):
 
         # Restore the saved parameters
         params = ParamDict2Obj(params)
+        params.data_dir = data_dir
+        params.result_dir = model_dir
         params.train = do_train
         params.infer = do_infer
         params.sample = do_sample
@@ -127,14 +131,16 @@ def main(params):
         os.makedirs(params.checkpoint_dir)
 
     train_dir = os.path.join(params.data_dir, 'train')
-    train_fns = [os.path.join('train', fn) for fn in os.listdir(train_dir) if
+    train_fns = [os.path.join(train_dir, fn) for fn in os.listdir(
+        train_dir) if
                  fn[:2] != '__']
     assert len(train_fns) > 0, 'No training files exist'
     train_sequences = SequenceData(
         params.data_dir, filenames=train_fns, seq_length=params.seq_length)
 
-    valid_dir = os.path.join(params.data_dir, 'valid')
-    valid_fns = [os.path.join('valid', fn) for fn in os.listdir(valid_dir) if
+    valid_dir = os.path.join(data_dir, 'valid')
+    valid_fns = [os.path.join(valid_dir, fn) for fn in os.listdir(
+        valid_dir) if
                  fn[:2] != '__']
     assert len(valid_fns) > 0, 'No validation files exist'
     valid_sequences = SequenceData(

@@ -18,10 +18,17 @@ class SequenceData(Dataset):
         # Load the raw data
         for fn in self.filenames:
             tmp = np.load(os.path.join(folder_dataset, fn)).astype(np.float32)
-            if tmp.shape[1] < tmp.shape[0]:
-                self._xs_all.append(tmp)
+            if len(tmp.shape) > 2:
+                for x in tmp:
+                    if x.shape[1] < x.shape[0]:
+                        self._xs_all.append(x)
+                    else:
+                        self._xs_all.append(x.T)
             else:
-                self._xs_all.append(tmp.T)
+                if tmp.shape[1] < tmp.shape[0]:
+                    self._xs_all.append(tmp)
+                else:
+                    self._xs_all.append(tmp.T)
 
         # If seq_length=0, then use the length of the smallest sequence
         if self.seq_length == 0:
@@ -38,6 +45,7 @@ class SequenceData(Dataset):
         self._xs = np.concatenate(self._xs, 0)
 
         self.data_dim = self._xs.shape[-1]
+        self.data_len = min([x.shape[0] for x in self._xs_all])
 
     # Give pytorch access to sequences
     def __getitem__(self, index):

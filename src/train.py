@@ -29,8 +29,10 @@ def run_epoch(i, data_loader, encoder, decoder, encoder_optimiser,
         decoder_optimiser.zero_grad()
 
     temp = torch.Tensor([params.temp])
+    total_length = torch.Tensor([data_loader.data_len])
     if params.cuda:
         temp = temp.cuda()
+        total_length = total_length.cuda()
 
     losses = []
     lvs = []
@@ -70,7 +72,7 @@ def run_epoch(i, data_loader, encoder, decoder, encoder_optimiser,
             logits_z, q, h = encoder(x, h)
             c, E, p, h_0 = decoder(temp, logits_z, h_0)
 
-            loss = loss_fn(x, E, c, q, p).sum()
+            loss = loss_fn(x, E, c, q, p, total_length).sum()
             losses.append(loss.item() / x.shape[0])
 
             if 'alpha' in q:
@@ -209,8 +211,10 @@ def infer(eval_sequence, encoder, decoder, loss_fn, nll_fn, params):
     nll = np.empty(shape=(len(eval_sequence), eval_sequence.seq_length))
 
     temp = torch.Tensor([params.temp])
+    total_length = torch.Tensor([eval_sequence.data_len])
     if params.cuda:
         temp = temp.cuda()
+        total_length = total_length.cuda()
 
     print(
         'Inference\n'
@@ -256,7 +260,7 @@ def infer(eval_sequence, encoder, decoder, loss_fn, nll_fn, params):
             logits, q, h = encoder(x, h)
             c, E, p, h_0 = decoder(temp, logits, h_0)
 
-            loss_batch = loss_fn(x, E, c, q, p)
+            loss_batch = loss_fn(x, E, c, q, p, total_length)
             nll_batch = nll_fn(x, E, c)
 
             eval_losses.append(loss_batch.sum().item() / x.shape[0])

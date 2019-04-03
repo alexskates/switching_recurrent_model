@@ -506,7 +506,7 @@ def heirarchical_nll(x, expected_values, covariances):
 
 
 def gumbel_vfe(x, expected_values, covariances, variational_distribution,
-               prior_distribution):
+               prior_distribution, original_data_length):
     # KL divergence
     q_z = variational_distribution['z'].contiguous()
     p_z = prior_distribution['z'].contiguous()
@@ -520,7 +520,10 @@ def gumbel_vfe(x, expected_values, covariances, variational_distribution,
                         covariances)
 
     elbo = ll - kl  # ELBO / variational free energy
-    return -elbo
+
+    # Also necessary to scale the time-varying terms in the loss (in this case
+    # all terms) as we are only using a sample from the data
+    return -elbo * original_data_length / x.shape[1]
 
 
 def gumbel_nll(x, expected_values, covariances):
@@ -531,7 +534,7 @@ def gumbel_nll(x, expected_values, covariances):
 
 
 def gumbel_normal_vfe(x, expected_values, covariances, variational_distribution,
-                      prior_distribution):
+                      prior_distribution, original_data_length):
     # Negative log likelihood
     ll = loglik_mixture(x.contiguous(),
                         expected_values['z'].contiguous(),
