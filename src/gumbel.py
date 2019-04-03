@@ -138,7 +138,7 @@ def main(params):
     train_sequences = SequenceData(
         params.data_dir, filenames=train_fns, seq_length=params.seq_length)
 
-    valid_dir = os.path.join(data_dir, 'valid')
+    valid_dir = os.path.join(params.data_dir, 'valid')
     valid_fns = [os.path.join(valid_dir, fn) for fn in os.listdir(
         valid_dir) if
                  fn[:2] != '__']
