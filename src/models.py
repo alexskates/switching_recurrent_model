@@ -523,7 +523,7 @@ def gumbel_vfe(x, expected_values, covariances, variational_distribution,
 
     # Also necessary to scale the time-varying terms in the loss (in this case
     # all terms) as we are only using a sample from the data
-    return -elbo * original_data_length / x.shape[1]
+    return -elbo
 
 
 def gumbel_nll(x, expected_values, covariances):
