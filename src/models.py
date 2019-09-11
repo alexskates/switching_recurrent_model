@@ -62,13 +62,16 @@ class GumbelEncoder(nn.Module):
                 torch.device('cpu'))
             if self.bidirectional:
                 self.combiner = Combiner(params.n_latent, params.n_hidden,
-                                         params.n_hidden * 2)
+                                         params.n_hidden * 2, params.cuda)
             else:
                 self.combiner = Combiner(params.n_latent, params.n_hidden,
-                                         params.n_hidden)
+                                         params.n_hidden, params.cuda)
             self.init_z = nn.Parameter(torch.ones(params.n_latent))
             # self.tmp_lin = nn.Linear(params.n_hidden, params.n_latent)
             # nn.init.xavier_uniform_(self.tmp_lin.weight)
+
+        if params.cuda:
+            self.cuda()
 
     def forward(self, tau, x, h=None):
         if self.sample_fwards:
@@ -126,8 +129,8 @@ class GumbelDecoder(nn.Module):
         # Generative model
         if params.prior.lower() == 'rnn':
             self.prior = RNNSoftmax(params)
-        elif params.prior.lower() == 'tcn':
-            self.prior = TCNSoftmax(params)
+        # elif params.prior.lower() == 'tcn':
+        #     self.prior = TCNSoftmax(params)
         elif params.prior.lower() == 'markov':
             self.prior = MarkovSoftmax(params)
         else:

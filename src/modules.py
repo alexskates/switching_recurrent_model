@@ -124,39 +124,39 @@ class RNNSoftmax(nn.Module):
         return Variable(weight.new(self.n_layers, batch_size,
                                    self.n_hidden).zero_())
 
-
-class TCNSoftmax(nn.Module):
-    def __init__(self, params):
-        super(TCNSoftmax, self).__init__()
-        self.n_in = params.n_latent
-        self.n_out = params.n_latent
-        self.n_kernel = params.n_kernel
-        self.n_layers = params.n_layers
-        self.n_channels = [params.n_hidden] * self.n_layers
-
-        self.tcn = TemporalConvNet(self.n_in, self.n_channels, self.n_kernel,
-                                   dropout=params.dropout)
-        self.l_logits = nn.Linear(self.n_channels[-1], self.n_out)
-
-        # Weight initialization
-        for name, p in self.tcn.named_parameters():
-            if 'weight' in name:
-                nn.init.xavier_normal_(p)
-        nn.init.xavier_uniform_(self.l_logits.weight)
-
-        if params.cuda:
-            self.cuda()
-
-    def forward(self, inputs):
-        z, _ = inputs
-        # q(z_t|x_{:t})
-        # z needs to have dimension [batch, channels, length]
-        out = self.tcn(z.transpose(1, 2)).transpose(1, 2)
-        logits_z = self.l_logits(out)
-        return logits_z, F.softmax(logits_z, dim=-1), None
-
-    def init_hidden(self, batch_size):
-        return None
+#
+# class TCNSoftmax(nn.Module):
+#     def __init__(self, params):
+#         super(TCNSoftmax, self).__init__()
+#         self.n_in = params.n_latent
+#         self.n_out = params.n_latent
+#         self.n_kernel = params.n_kernel
+#         self.n_layers = params.n_layers
+#         self.n_channels = [params.n_hidden] * self.n_layers
+#
+#         self.tcn = TemporalConvNet(self.n_in, self.n_channels, self.n_kernel,
+#                                    dropout=params.dropout)
+#         self.l_logits = nn.Linear(self.n_channels[-1], self.n_out)
+#
+#         # Weight initialization
+#         for name, p in self.tcn.named_parameters():
+#             if 'weight' in name:
+#                 nn.init.xavier_normal_(p)
+#         nn.init.xavier_uniform_(self.l_logits.weight)
+#
+#         if params.cuda:
+#             self.cuda()
+#
+#     def forward(self, inputs):
+#         z, _ = inputs
+#         # q(z_t|x_{:t})
+#         # z needs to have dimension [batch, channels, length]
+#         out = self.tcn(z.transpose(1, 2)).transpose(1, 2)
+#         logits_z = self.l_logits(out)
+#         return logits_z, F.softmax(logits_z, dim=-1), None
+#
+#     def init_hidden(self, batch_size):
+#         return None
 
 
 class MarkovSoftmax(nn.Module):

@@ -171,9 +171,12 @@ class Combiner(nn.Module):
     x_{t:T})`.
     """
 
-    def __init__(self, z_dim, hidden_size_z, hidden_size_x):
+    def __init__(self, z_dim, hidden_size_z, hidden_size_x, cuda=False):
         super(Combiner, self).__init__()
         self.lin_concat = nn.Linear(hidden_size_z + hidden_size_x, z_dim)
+
+        if cuda:
+            self.cuda()
 
     def forward(self, z_forward, x_backward):
         """
