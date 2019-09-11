@@ -4,6 +4,8 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
 
+from initialisation import FixedMeanGMM
+
 _eps = 1e-20
 
 
@@ -14,6 +16,56 @@ def init_weights(m):
         for name, p in m.named_parameters():
             if 'weight' in name:
                 nn.init.xavier_normal_(p)
+
+
+def init_hidden(rnn_type, num_layers, batch_size, hidden_size, dtype, device):
+    """
+    Outputs an initial hidden state for `rnn_type`.
+    """
+    h = Variable(torch.zeros((num_layers, batch_size, hidden_size),
+                             dtype=dtype, device=device))
+    if rnn_type == nn.LSTM:
+        # LSTMs need cell state as well as hidden state
+        c = Variable(torch.zeros((num_layers, batch_size, hidden_size),
+                                 dtype=dtype, device=device))
+        return h, c
+    return h
+
+
+def reverse_sequence(inputs, lengths, batch_first=False):
+    """
+    Taken from: https://github.com/rdipietro/pytorch/blob
+    /4c00324affb8c6d53d4362e321ea0e99ede6cfde/torch/nn/utils/rnn.py
+
+    Reverses sequences according to their lengths.
+    Inputs should have size ``T x B x *`` if ``batch_first`` is False, or
+    ``B x T x *`` if True. T is the length of the longest sequence (or larger),
+    B is the batch size, and * is any number of dimensions (including 0).
+    Arguments:
+        inputs (Variable): padded batch of variable length sequences.
+        lengths (list[int]): list of sequence lengths
+        batch_first (bool, optional): if True, inputs should be B x T x *.
+    Returns:
+        A Variable with the same size as inputs, but with each sequence
+        reversed according to its length.
+    """
+    if batch_first:
+        inputs = inputs.transpose(0, 1)
+    max_length, batch_size = inputs.size(0), inputs.size(1)
+    if len(lengths) != batch_size:
+        raise ValueError('inputs is incompatible with lengths.')
+    ind = [list(reversed(range(0, length))) + list(range(length, max_length))
+           for length in lengths]
+    ind = Variable(torch.LongTensor(ind).transpose(0, 1))
+    for dim in range(2, inputs.dim()):
+        ind = ind.unsqueeze(dim)
+    ind = ind.expand_as(inputs)
+    if inputs.is_cuda:
+        ind = ind.cuda(inputs.get_device())
+    reversed_inputs = torch.gather(inputs, 0, ind)
+    if batch_first:
+        reversed_inputs = reversed_inputs.transpose(0, 1)
+    return reversed_inputs
 
 
 def sample_gumbel(shape):
@@ -27,7 +79,7 @@ def sample_gumbel(shape):
     return -torch.log(-torch.log(U + _eps) + _eps)
 
 
-def gumbel_softmax(logits, temperature, hard=False):
+def gumbel_softmax(logits, temperature, hard=False, shape=None):
     """
     Approximately sample from a categorical distribution with parameters alpha
     using the Gumbel softmax.
@@ -39,7 +91,9 @@ def gumbel_softmax(logits, temperature, hard=False):
     Compute the sample via the equation:
     y_i = exp((x_i + g_i)/tau)/sum_j(exp((x_i + g_i)/tau))
     """
-    gumbel_softmax_sample = logits + sample_gumbel(np.shape(logits)).type(logits.type())
+    if shape is None:
+        shape = logits.shape
+    gumbel_softmax_sample = logits + sample_gumbel(shape).type(logits.type())
     y = F.softmax(gumbel_softmax_sample / temperature, dim=-1)
 
     if hard:
@@ -111,6 +165,27 @@ def gaussian_kl_div(q_mu, q_lv, p_mu=None, p_lv=None):
     return 0.5 * torch.sum(log_ratio + (q_v + diff)/p_v - 1, dim=-1)
 
 
+class Combiner(nn.Module):
+    """
+    Parameterizes the (logits of the) variational distribution `q(z_t | z_{<t},
+    x_{t:T})`.
+    """
+
+    def __init__(self, z_dim, hidden_size_z, hidden_size_x):
+        super(Combiner, self).__init__()
+        self.lin_concat = nn.Linear(hidden_size_z + hidden_size_x, z_dim)
+
+    def forward(self, z_forward, x_backward):
+        """
+        Want to treat this like a bidirectional rnn, so we concatenate the
+        outputs of the backward rnn that is conditioned on `x_{>=t}` with the
+        outputs of the forwards rnn that is conditioned on `z_{<t},
+        then apply a linear affine transformation.
+        """
+        zx = torch.cat([z_forward, x_backward], dim=-1)
+        return self.lin_concat(zx)
+
+
 def offset(data):
     """
     When we feed the latent factors to the prior, want to offset them 
@@ -169,31 +244,35 @@ def decompose_covariances(c, n_pcs=0, diag_B=False, use_pca_cov_model=False):
     return W.astype(np.float32), B.astype(np.float32)
 
 
-def fit_covariances(data, n_mixtures, C=None, use_pca_cov_model=False, n_pcs=0):
+def fit_covariances(data, n_mixtures, C=None, use_pca_cov_model=False,
+                    n_pcs=0, random_seed=42, verbose=True,
+                    data_proportion=0.5):
     """
-    Fit the data using a GMM and decompose the covariance matrices
+    Fit the data using a GMM with zero mean and decompose the covariance
+    matrices
     
     data: np.array of size [T, data_dim] 
     n_mixtures: size of latent dimension
     use_pca_cov_model: Whether to apply dimensionality reduction on cov matrices
     n_pcs: number of principal components to take in dim. reduction
     """
+    init_training = None
     if C is None:
-        from sklearn.mixture import GaussianMixture
-        GMM = GaussianMixture(covariance_type='full', n_components=n_mixtures)
-        if len(data.shape) > 2:
-            data = data[0]  # if multiple subjects, just take the first subject.
-        GMM.fit(data)
-        C = GMM.covariances_
+        GMM = FixedMeanGMM(n_components=n_mixtures,
+                           mean=np.zeros(data.shape[-1]),
+                           random_state=random_seed,
+                           verbose=verbose)
 
-        # Add noise to estimates so we don't end up with duplicated states
-        noise = np.random.normal(0, 0.1, size=[n_mixtures, data.shape[-1]])
-        noise = np.matmul(noise.reshape(n_mixtures, data.shape[-1], 1),
-                          noise.reshape(n_mixtures, 1, data.shape[-1]))
-        noise += np.random.random(size=[n_mixtures, 1, data.shape[1]])\
-                 + np.eye(data.shape[-1]) * 0.3
+        # Subsample the data
+        data = data.reshape(-1, data.shape[-1])
+        num_samples = int(data.shape[0] * data_proportion)
+        sampled_indices = np.random.choice(np.arange(data.shape[0]),
+                                           size=num_samples,
+                                           replace=False)
+        sampled_data = data[sampled_indices]
 
-        C += noise
+        init_training = GMM.fit(sampled_data)
+        C = GMM.cov_
 
     if n_pcs > 0:
         W, B = decompose_covariances(C, data.shape[-1], False,
@@ -201,7 +280,7 @@ def fit_covariances(data, n_mixtures, C=None, use_pca_cov_model=False, n_pcs=0):
     else:
         W, B = decompose_covariances(C, n_pcs, False,
                                      use_pca_cov_model)
-    return W, B
+    return W, B, init_training
 
 
 class DataLoader(object):
