@@ -27,13 +27,19 @@ def init(data, params):
             covariances = np.load(cov_path)
 
     # Get the initial estimates of the covariance matrices
-    params.W_init, params.B_init = fit_covariances(
+    params.W_init, params.B_init, train_init = fit_covariances(
         data, params.n_latent, covariances, params.use_pca_cov_model,
-        params.n_pc)
+        params.n_pc, params.rand_seed)
 
+    if train_init is not None:
+        np.save(os.path.join(params.result_dir, 'init_training.npy'),
+                train_init)
 
     encoder = GumbelEncoder(params)
     decoder = GumbelDecoder(params)
+
+    np.save(os.path.join(params.result_dir, 'init_covariances.npy'),
+            decoder.covariance().cpu().data.numpy())
 
     if not params.use_pca_cov_model:
         decoder.W.requires_grad = False
@@ -81,6 +87,7 @@ def main(params):
         do_infer = params.infer
         do_sample = params.sample
         do_decode = params.decode
+        kl_anneal = params.kl_anneal
         epochs = params.num_epochs
         encoder_fn = params.encoder_fn
         decoder_fn = params.decoder_fn
@@ -106,6 +113,7 @@ def main(params):
         params.infer = do_infer
         params.sample = do_sample
         params.decode = do_decode
+        params.kl_anneal = kl_anneal
         params.num_epochs = epochs
         params.encoder_fn = encoder_fn
         params.decoder_fn = decoder_fn
@@ -189,6 +197,9 @@ if __name__ == "__main__":
     parser.add_argument('--n-layers',           '-l', type=int,     default=1)
     parser.add_argument('--n-kernel',           '-K', type=int,     default=5)
     parser.add_argument('--dropout',            '-o', type=float,   default=0.)
+    parser.add_argument('--kl-anneal',         '-kl', action='store_true')
+    parser.add_argument('--kl-anneal-k',      '-klk', type=float,   default=0.1)
+    parser.add_argument('--kl-anneal-x0',    '-klx0', type=float,   default=100)
     parser.add_argument('--num-epochs',         '-e', type=int,     default=100)
     parser.add_argument('--checkpoint-every',  '-ck', type=int,     default=20)
     parser.add_argument('--valid-every',        '-v', type=int,     default=10)
@@ -201,6 +212,8 @@ if __name__ == "__main__":
     parser.add_argument('--prior',             '-pr', default='rnn')
     parser.add_argument('--prior-diag',        '-pd', type=int, default=1)
     parser.add_argument('--inference',        '-inf', default='rnn')
+    parser.add_argument('--forwards-inf',      '-fw', action='store_true')
+    parser.add_argument('--backwards-inf',     '-bw', action='store_true')
     parser.add_argument('--train',             '-tr', action='store_true')
     parser.add_argument('--infer',              '-i', action='store_true')
     parser.add_argument('--sample',           '-smp', action='store_true')
