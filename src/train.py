@@ -29,9 +29,19 @@ def run_epoch(i, data_loader, encoder, decoder, encoder_optimiser,
         decoder_optimiser.zero_grad()
 
     temp = torch.Tensor([params.temp])
+
+    if params.kl_anneal:
+        w = 1 / (1 + np.exp(-params.kl_anneal_k * (i - params.kl_anneal_x0)))
+    else:
+        w = 1.
+    w = torch.Tensor([w])
+
     if params.cuda:
         temp = temp.cuda()
+        w = w.cuda()
 
+    nlls = []
+    kls = []
     losses = []
     lvs = []
 
@@ -44,12 +54,12 @@ def run_epoch(i, data_loader, encoder, decoder, encoder_optimiser,
         for x in x_seq.split(params.net_length, 1):
 
             if h is not None:
-                if type(h) == list:
+                if type(h) in (list, tuple):
                     h = [Variable(h_element.data) for h_element in h]
                 else:
                     h = Variable(h.data)
             if h_0 is not None:
-                if type(h_0) == list:
+                if type(h_0) in (list, tuple):
                     h_0 = [Variable(h_0_element.data) for h_0_element in h_0]
                 else:
                     h_0 = Variable(h_0.data)
@@ -57,21 +67,25 @@ def run_epoch(i, data_loader, encoder, decoder, encoder_optimiser,
             if params.cuda:
                 x = x.cuda()
                 if h is not None:
-                    if type(h) == list:
+                    if type(h) in (list, tuple):
                         h = [h_element.cuda() for h_element in h]
                     else:
                         h = h.cuda()
                 if h_0 is not None:
-                    if type(h_0) == list:
+                    if type(h_0) in (list, tuple):
                         h_0 = [h_0_element.cuda() for h_0_element in h_0]
                     else:
                         h_0 = h_0.cuda()
 
-            logits_z, q, h = encoder(x, h)
-            c, E, p, h_0 = decoder(temp, logits_z, h_0)
+            logits_z, q, E, h = encoder(temp, x, h)
+            c, p, h_0 = decoder(E, h_0)
 
-            loss = loss_fn(x, E, c, q, p).sum()
-            losses.append(loss.item() / x.shape[0])
+            nll, kl = loss_fn(x, E, c, q, p)
+            kl_batch = w * kl
+            loss = torch.sum(nll + kl_batch, -1).mean()
+            losses.append(loss.item())
+            kls.append(kl_batch.sum(-1).mean().item())
+            nlls.append(nll.sum(-1).mean().item())
 
             if 'alpha' in q:
                 lvs.append(q['alpha'][1].data.cpu().numpy())
@@ -85,13 +99,17 @@ def run_epoch(i, data_loader, encoder, decoder, encoder_optimiser,
                 encoder_optimiser.step()
                 decoder_optimiser.step()
 
-    return losses, lvs
+    return losses, nlls, kls, lvs
 
 
 def train(train_sequence, valid_sequence, encoder, decoder, loss_fn, params):
     start = datetime.datetime.now()
 
+    train_nlls = []
+    train_kls = []
     train_losses = []
+    valid_nlls = []
+    valid_kls = []
     valid_losses = []
     lvs_all = []
 
@@ -119,7 +137,7 @@ def train(train_sequence, valid_sequence, encoder, decoder, loss_fn, params):
 
     try:
         for i in range(params.num_epochs):
-            train_loss, lvs = run_epoch(
+            train_loss, train_nll, train_kl, lvs = run_epoch(
                 i,
                 data_loader=train_loader,
                 encoder=encoder,
@@ -130,10 +148,12 @@ def train(train_sequence, valid_sequence, encoder, decoder, loss_fn, params):
                 params=params,
                 backward=True)
             train_losses.append(np.mean(train_loss))
+            train_nlls.append(np.mean(train_nll))
+            train_kls.append(np.mean(train_kl))
             lvs_all.extend(lvs)
 
             if i % params.valid_every == 0:
-                valid_loss, _ = run_epoch(
+                valid_loss, valid_nll, valid_kl, _ = run_epoch(
                     i,
                     data_loader=valid_loader,
                     encoder=encoder,
@@ -144,17 +164,49 @@ def train(train_sequence, valid_sequence, encoder, decoder, loss_fn, params):
                     params=params,
                     backward=False)
                 valid_losses.append(np.mean(valid_loss))
+                valid_nlls.append(np.mean(valid_nll))
+                valid_kls.append(np.mean(valid_kl))
 
                 if len(valid_losses) > 1:
-                    plt.plot(np.arange(0, i+1), train_losses, label='Training',
-                             c='blue')
+                    plt.plot(np.arange(0, i+1), train_losses,
+                             label='Training', c='blue')
                     plt.plot(np.arange(0, i+1, params.valid_every),
                              valid_losses, label='Validation', c='orange',
                              linestyle='--')
                     plt.legend()
                     plt.xlabel('Epochs')
                     plt.ylabel('VFE')
-                    plt.savefig(join(params.result_dir, 'training.png'))
+                    plt.savefig(join(params.result_dir, 'training_loss.png'))
+                    plt.close()
+
+                    plt.plot(np.arange(0, i+1), train_nlls, label='Training',
+                             c='blue')
+                    plt.plot(np.arange(0, i+1, params.valid_every),
+                             valid_nlls, label='Validation', c='orange',
+                             linestyle='--')
+                    plt.legend()
+                    plt.xlabel('Epochs')
+                    plt.ylabel('NLL')
+                    plt.savefig(join(params.result_dir, 'training_nll.png'))
+                    plt.close()
+
+                    fig, ax1 = plt.subplots()
+                    ax1.set_ylabel('KL')
+                    ax1.set_xlabel('Epochs')
+                    ax1.plot(np.arange(0, i+1), train_kls, label='Training',
+                             c='blue')
+                    ax1.plot(np.arange(0, i+1, params.valid_every),
+                             valid_kls, label='Validation', c='orange',
+                             linestyle='--')
+                    if params.kl_anneal:
+                        ax2 = ax1.twinx()
+                        ax2.set_ylabel('KL Weight')
+                        ax2.set_ylim(0, 1)
+                        ep = np.arange(0, i+1)
+                        weights = 1/(1+np.exp(-params.kl_anneal_k*(
+                                ep-params.kl_anneal_x0)))
+                        ax2.plot(ep, weights, label='KL weight', c='r')
+                    plt.savefig(join(params.result_dir, 'training_kl.png'))
                     plt.close()
 
             if i % params.checkpoint_every == 0:
@@ -179,8 +231,12 @@ def train(train_sequence, valid_sequence, encoder, decoder, loss_fn, params):
         torch.save(decoder.state_dict(),
                    join(params.checkpoint_dir, 'decoder_final.pt'))
 
-        np.save(join(params.result_dir, 'train_loss.npy'), np.array(train_losses))
+        np.save(join(params.result_dir, 'train_loss.npy'), np.array(train_nlls))
+        np.save(join(params.result_dir, 'train_kl.npy'), np.array(train_kls))
+        np.save(join(params.result_dir, 'train_nll.npy'), np.array(train_nlls))
         np.save(join(params.result_dir, 'valid_loss.npy'), np.array(valid_losses))
+        np.save(join(params.result_dir, 'valid_kl.npy'), np.array(valid_kls))
+        np.save(join(params.result_dir, 'valid_nll.npy'), np.array(valid_nlls))
 
     print('Training complete, final loss: {}, time taken: {}\n'.format(
         train_losses[-1], str(datetime.datetime.now() - start)))
@@ -205,8 +261,9 @@ def infer(eval_sequence, encoder, decoder, loss_fn, nll_fn, params):
         for (param, latent_dim) in encoder.distributions.items()
     }
 
-    vfe = np.empty(shape=(len(eval_sequence), eval_sequence.seq_length))
-    nll = np.empty(shape=(len(eval_sequence), eval_sequence.seq_length))
+    vfes = np.empty(shape=(len(eval_sequence), eval_sequence.seq_length))
+    nlls = np.empty(shape=(len(eval_sequence), eval_sequence.seq_length))
+    kls = np.empty(shape=(len(eval_sequence), eval_sequence.seq_length))
 
     temp = torch.Tensor([params.temp])
     if params.cuda:
@@ -230,12 +287,12 @@ def infer(eval_sequence, encoder, decoder, loss_fn, nll_fn, params):
         for i, x in enumerate(x_seq.split(params.net_length, 1)):
 
             if h is not None:
-                if type(h) == list:
+                if type(h) in (list, tuple):
                     h = [Variable(h_element.data) for h_element in h]
                 else:
                     h = Variable(h.data)
             if h_0 is not None:
-                if type(h_0) == list:
+                if type(h_0)in (list, tuple):
                     h_0 = [Variable(h_0_element.data) for h_0_element in h_0]
                 else:
                     h_0 = Variable(h_0.data)
@@ -243,21 +300,23 @@ def infer(eval_sequence, encoder, decoder, loss_fn, nll_fn, params):
             if params.cuda:
                 x = x.cuda()
                 if h is not None:
-                    if type(h) == list:
+                    if type(h) in (list, tuple):
                         h = [h_element.cuda() for h_element in h]
                     else:
                         h = h.cuda()
                 if h_0 is not None:
-                    if type(h_0) == list:
+                    if type(h_0) in (list, tuple):
                         h_0 = [h_0_element.cuda() for h_0_element in h_0]
                     else:
                         h_0 = h_0.cuda()
 
-            logits, q, h = encoder(x, h)
-            c, E, p, h_0 = decoder(temp, logits, h_0)
+            logits, q, E, h = encoder(temp, x, h)
+            c, p, h_0 = decoder(E, h_0)
 
-            loss_batch = loss_fn(x, E, c, q, p)
-            nll_batch = nll_fn(x, E, c)
+            nll, kl = loss_fn(x, E, c, q, p)
+            nll_batch = nll
+            kl_batch = kl
+            loss_batch = nll_batch + kl_batch
 
             eval_losses.append(loss_batch.sum().item() / x.shape[0])
 
@@ -269,8 +328,9 @@ def infer(eval_sequence, encoder, decoder, loss_fn, nll_fn, params):
                     q_alpha_lv = inf[1].data.cpu().numpy()
                 else:
                     q_sequence[param][:, idx_start:idx_end] = inf.data.cpu().numpy()
-            vfe[:, idx_start:idx_end] = loss_batch.data.cpu().numpy()
-            nll[:, idx_start:idx_end] = nll_batch.data.cpu().numpy()
+            vfes[:, idx_start:idx_end] = loss_batch.data.cpu().numpy()
+            nlls[:, idx_start:idx_end] = nll_batch.data.cpu().numpy()
+            kls[:, idx_start:idx_end] = kl_batch.data.cpu().numpy()
 
     print('Inference complete, time taken: {}\n'.format(
         str(datetime.datetime.now() - start)))
@@ -280,8 +340,9 @@ def infer(eval_sequence, encoder, decoder, loss_fn, nll_fn, params):
         if param == 'alpha':
             np.save(join(params.result_dir, 'q_alpha_lv.npy'), q_alpha_lv)
         np.save(join(params.result_dir, 'q_%s_all.npy' % param), seq)
-    np.save(join(params.result_dir, 'vfe_all.npy'), vfe)
-    np.save(join(params.result_dir, 'nll_all.npy'), nll)
+    np.save(join(params.result_dir, 'vfe_all.npy'), vfes)
+    np.save(join(params.result_dir, 'nll_all.npy'), nlls)
+    np.save(join(params.result_dir, 'kl_all.npy'), kls)
     np.save(join(params.result_dir, 'inferred_covariances.npy'), c.data.cpu().numpy())
     np.save(join(params.result_dir, 'eval_loss.npy'), np.array(eval_losses))
     if hasattr(params, 'prior') and params.prior == 'markov':
