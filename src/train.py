@@ -83,9 +83,9 @@ def run_epoch(i, data_loader, encoder, decoder, encoder_optimiser,
             nll, kl = loss_fn(x, E, c, q, p)
             kl_batch = w * kl
             loss = torch.sum(nll + kl_batch, -1).mean()
-            losses.append(loss.item())
-            kls.append(kl_batch.sum(-1).mean().item())
-            nlls.append(nll.sum(-1).mean().item())
+            losses.append(loss.data.cpu().item())
+            kls.append(kl_batch.sum(-1).mean().data.cpu().item())
+            nlls.append(nll.sum(-1).mean().data.cpu().item())
 
             if 'alpha' in q:
                 lvs.append(q['alpha'][1].data.cpu().numpy())
