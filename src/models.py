@@ -19,7 +19,7 @@ from modules import (
     # TCNDistribution,
     RNNDistribution,
     RNNSoftmax,
-    TCNSoftmax,
+    # TCNSoftmax,
     MarkovSoftmax,
     Uninform
 )
