@@ -65,7 +65,9 @@ class FixedMeanGMM:
         cluster_posterior = self.predict_proba(X)
 
         # M-step: update cluster covariances as weighted average of observations
-        weights = (cluster_posterior.T / cluster_posterior.sum(axis=1)).T
+        weights = (cluster_posterior.T / (
+                cluster_posterior.sum(axis=1) + 1e-20)
+                   ).T
         new_covs = np.matmul(weights[:, np.newaxis, :] * X.T[np.newaxis, :, :],
                              X)
 
