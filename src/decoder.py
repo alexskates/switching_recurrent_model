@@ -1,6 +1,8 @@
+import os
 import heapq
 import torch
 import numpy as np
+from tqdm import tqdm
 from torch.autograd import Variable
 
 
@@ -91,7 +93,9 @@ class SequenceDecoder(object):
     def __init__(self, q_z, decoder, T, params):
         self.decoder = decoder
         self.decoder_network = self.decoder.prior
-        self.q_z = torch.from_numpy(q_z.astype(np.float32))
+        self.q_z = torch.from_numpy(
+            q_z.reshape(-1, q_z.shape[-1]).astype(np.float32)
+        )
 
         self.T = T
 
@@ -123,7 +127,7 @@ class SequenceDecoder(object):
             requires_hidden = True
 
             # Equation (11), factor over time
-            for t in range(2, self.T):
+            for t in tqdm(range(2, self.T)):
                 sequences = sequence_list.extract()
                 sequence_list.reset()
 
@@ -146,11 +150,13 @@ class SequenceDecoder(object):
                 logprob_feed = torch.stack(logprob_feed).unsqueeze(-1)
 
                 # Prior step
-                _, _, _, log_prob_transition, h = self.decoder_network(input_feed, state_feed)
+                _, prob_transition, h = self.decoder_network((input_feed,
+                                                              state_feed))
 
                 # Equation (18), used to figure out which of the K sequences gives
                 # the best log likelihood for transitioning into that state
-                loglik_sum = logprob_feed + log_prob_transition[:, -1] + log_prob_inference
+                loglik_sum = logprob_feed + prob_transition[:, -1].log() + \
+                             log_prob_inference
 
                 for j in range(self.n_states):
                     # Get the index of the sequence
@@ -173,53 +179,63 @@ class SequenceDecoder(object):
 
         return sequence_list
 
+
+def decode(params, decoder):
+    q_z_x = np.load(os.path.join(params.result_dir, 'q_z_all.npy'))
+    tmp_decoder = SequenceDecoder(q_z_x, decoder, q_z_x.shape[1], params)
+    sequence_list = tmp_decoder.dynamic_beam_search()
+
+    # Save the top sequence
+    np.save(os.path.join(params.result_dir, 'decoded_state_seq.npy'),
+            sequence_list.top().sequence.data.cpu().numpy())
+#
 # def main():
-#     path = '/Users/askates/Documents/Projects/experiments/Simulations' \
-#            '/markov_test/results/rnn'
 #
-#     # Load params
-#     import json
-#     with open(os.path.join(path, 'params.json')) as f:
-#         params = json.load(f)
-#     params['train'] = False
-#     params['infer'] = False
-#
-#     # Convert params dictionary to an object
-#     class ParamDict2Obj(object):
-#         def __init__(self, dictionary):
-#             for key in dictionary:
-#                 setattr(self, key, dictionary[key])
-#
-#     params = ParamDict2Obj(params)
-#
-#     # Load data
-#     data = np.load(os.path.join(params.data_dir, params.data_fn))
-#     params.n_input = data.shape[-1]
-#
-#     # Load encoder/decoder
-#     encoder, decoder = init(data, params)
-#
-#     # Load q(z|x)
-#     q_z_x = np.load(os.path.join(params.result_dir, 'q_z_all.npy'))
-#
-#     # trans_prob = np.load(os.path.join(params.data_dir, 'trans_prob.npy'))
+#     # # # Load params
+#     # # import json
+#     # # with open(os.path.join(path, 'params.json')) as f:
+#     # params = json.load(f)
+#     # params['train'] = False
+#     # params['infer'] = False
 #     #
-#     # def t():
-#     #     tr = torch.nn.Parameter(torch.from_numpy(trans_prob.astype(np.float32)))
-#     #     return tr
-#
-#     # decoder.prior.trans_prob = t
-#
-#     state_seq = np.load(os.path.join(params.data_dir, 'state_seq.npy'))
-#
-#     tmp_decoder = SequenceDecoder(q_z_x, decoder, data.shape[0], params)
-#     sequence_list = tmp_decoder.dynamic_beam_search()
+#     # # Convert params dictionary to an object
+#     # class ParamDict2Obj(object):
+#     #     def __init__(self, dictionary):
+#     #         for key in dictionary:
+#     #             setattr(self, key, dictionary[key])
+#     #
+#     # params = ParamDict2Obj(params)
+#     #
+#     # # Load data
+#     # data = np.load(os.path.join(params.data_dir, params.data_fn))
+#     # params.n_input = data.shape[-1]
+#     #
+#     # # Load encoder/decoder
+#     # encoder, decoder = init(data, params)
+#     #
+#     # # Load q(z|x)
+#     # q_z_x = np.load(os.path.join(params.result_dir, 'q_z_all.npy'))
+#     #
+#     # # trans_prob = np.load(os.path.join(params.data_dir, 'trans_prob.npy'))
+#     # #
+#     # # def t():
+#     # #     tr = torch.nn.Parameter(torch.from_numpy(trans_prob.astype(np.float32)))
+#     # #     return tr
+#     #
+#     # # decoder.prior.trans_prob = t
+#     #
+#     # state_seq = np.load(os.path.join(params.data_dir, 'state_seq.npy'))
+#     #
+#     # tmp_decoder = SequenceDecoder(q_z_x, decoder, data.shape[0], params)
+#     # sequence_list = tmp_decoder.dynamic_beam_search()
+#     #
+#     # test = 1
 #
 #
 # if __name__ == '__main__':
 #     main()
-#
-#
+
+
 
 
 
