@@ -8,6 +8,7 @@ from utils import fit_covariances
 from models import GumbelEncoder, GumbelDecoder, gumbel_vfe, nll
 from dataloader import SequenceData
 from train import train, infer, sample
+from decoder import decode
 
 _eps = 1e-20
 
@@ -16,7 +17,7 @@ def init(data, params):
     # Check if a set of covariance matrices has been specified
     covariances = None
     if params.cov_fn is not None:
-        cov_path = os.path.join(params.data_dir, params.cov_fn)
+        cov_path = params.cov_fn
         assert os.path.exists(cov_path), '{} does not exist'.format(
             cov_path)
         # if Matlab path, then load into matlab
@@ -93,6 +94,7 @@ def main(params):
         decoder_fn = params.decoder_fn
         data_dir = params.data_dir
         model_dir = params.result_dir
+        cov_fn = params.cov_fn
         lr = params.lr
 
         # Load params to ensure that we're using the same params
@@ -117,6 +119,7 @@ def main(params):
         params.num_epochs = epochs
         params.encoder_fn = encoder_fn
         params.decoder_fn = decoder_fn
+        params.cov_fn = cov_fn
         params.lr = lr
     else:
         if not os.path.exists(params.result_dir):
@@ -171,6 +174,9 @@ def main(params):
 
     if params.sample:
         sample(decoder, params)
+
+    if params.decode:
+        decode(params, decoder)
 
 
 if __name__ == "__main__":
