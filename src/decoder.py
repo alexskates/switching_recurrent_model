@@ -2,7 +2,6 @@ import os
 import heapq
 import torch
 import numpy as np
-from tqdm import tqdm
 from torch.autograd import Variable
 
 
@@ -127,7 +126,7 @@ class SequenceDecoder(object):
             requires_hidden = True
 
             # Equation (11), factor over time
-            for t in tqdm(range(2, self.T)):
+            for t in range(2, self.T):
                 sequences = sequence_list.extract()
                 sequence_list.reset()
 
