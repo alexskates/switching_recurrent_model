@@ -79,7 +79,7 @@ class FixedMeanGMM:
         likelihood = np.stack(
             [multivariate_normal.pdf(X, mean=self.mean, cov=cov)
              for cov in self.cov_])
-        cluster_posterior = (likelihood / likelihood.sum(axis=0))
+        cluster_posterior = (likelihood / (likelihood.sum(axis=0) + 1e-20))
         return cluster_posterior
 
     def predict(self, X):
