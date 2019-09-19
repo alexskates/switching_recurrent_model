@@ -268,7 +268,7 @@ def fit_covariances(data, n_mixtures, C=None, use_pca_cov_model=False,
 
         # Subsample the data
         data = data.reshape(-1, data.shape[-1])
-        num_samples = min(int(data.shape[0] * data_proportion), 1000000)
+        num_samples = min(int(data.shape[0] * data_proportion), 1500000)
         sampled_indices = np.random.choice(np.arange(data.shape[0]),
                                            size=num_samples,
                                            replace=False)
