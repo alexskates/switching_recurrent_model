@@ -115,8 +115,8 @@ def train(train_sequence, valid_sequence, encoder, decoder, loss_fn, params):
 
     train_loader = DataLoader(train_sequence, batch_size=params.batch_size,
                               shuffle=True)
-    valid_loader = DataLoader(valid_sequence, batch_size=params.batch_size,
-                              shuffle=True)
+    # valid_loader = DataLoader(valid_sequence, batch_size=params.batch_size,
+    #                           shuffle=True)
 
     print(
         'Training\n'
@@ -152,62 +152,62 @@ def train(train_sequence, valid_sequence, encoder, decoder, loss_fn, params):
             train_kls.append(np.mean(train_kl))
             lvs_all.extend(lvs)
 
-            if i % params.valid_every == 0:
-                valid_loss, valid_nll, valid_kl, _ = run_epoch(
-                    i,
-                    data_loader=valid_loader,
-                    encoder=encoder,
-                    decoder=decoder,
-                    encoder_optimiser=None,
-                    decoder_optimiser=None,
-                    loss_fn=loss_fn,
-                    params=params,
-                    backward=False)
-                valid_losses.append(np.mean(valid_loss))
-                valid_nlls.append(np.mean(valid_nll))
-                valid_kls.append(np.mean(valid_kl))
-
-                if len(valid_losses) > 1:
-                    plt.plot(np.arange(0, i+1), train_losses,
-                             label='Training', c='blue')
-                    plt.plot(np.arange(0, i+1, params.valid_every),
-                             valid_losses, label='Validation', c='orange',
-                             linestyle='--')
-                    plt.legend()
-                    plt.xlabel('Epochs')
-                    plt.ylabel('VFE')
-                    plt.savefig(join(params.result_dir, 'training_loss.png'))
-                    plt.close()
-
-                    plt.plot(np.arange(0, i+1), train_nlls, label='Training',
-                             c='blue')
-                    plt.plot(np.arange(0, i+1, params.valid_every),
-                             valid_nlls, label='Validation', c='orange',
-                             linestyle='--')
-                    plt.legend()
-                    plt.xlabel('Epochs')
-                    plt.ylabel('NLL')
-                    plt.savefig(join(params.result_dir, 'training_nll.png'))
-                    plt.close()
-
-                    fig, ax1 = plt.subplots()
-                    ax1.set_ylabel('KL')
-                    ax1.set_xlabel('Epochs')
-                    ax1.plot(np.arange(0, i+1), train_kls, label='Training',
-                             c='blue')
-                    ax1.plot(np.arange(0, i+1, params.valid_every),
-                             valid_kls, label='Validation', c='orange',
-                             linestyle='--')
-                    if params.kl_anneal:
-                        ax2 = ax1.twinx()
-                        ax2.set_ylabel('KL Weight')
-                        ax2.set_ylim(0, 1)
-                        ep = np.arange(0, i+1)
-                        weights = 1/(1+np.exp(-params.kl_anneal_k*(
-                                ep-params.kl_anneal_x0)))
-                        ax2.plot(ep, weights, label='KL weight', c='r')
-                    plt.savefig(join(params.result_dir, 'training_kl.png'))
-                    plt.close()
+            # if i % params.valid_every == 0:
+            #     valid_loss, valid_nll, valid_kl, _ = run_epoch(
+            #         i,
+            #         data_loader=valid_loader,
+            #         encoder=encoder,
+            #         decoder=decoder,
+            #         encoder_optimiser=None,
+            #         decoder_optimiser=None,
+            #         loss_fn=loss_fn,
+            #         params=params,
+            #         backward=False)
+            #     valid_losses.append(np.mean(valid_loss))
+            #     valid_nlls.append(np.mean(valid_nll))
+            #     valid_kls.append(np.mean(valid_kl))
+            #
+            #     if len(valid_losses) > 1:
+            #         plt.plot(np.arange(0, i+1), train_losses,
+            #                  label='Training', c='blue')
+            #         plt.plot(np.arange(0, i+1, params.valid_every),
+            #                  valid_losses, label='Validation', c='orange',
+            #                  linestyle='--')
+            #         plt.legend()
+            #         plt.xlabel('Epochs')
+            #         plt.ylabel('VFE')
+            #         plt.savefig(join(params.result_dir, 'training_loss.png'))
+            #         plt.close()
+            #
+            #         plt.plot(np.arange(0, i+1), train_nlls, label='Training',
+            #                  c='blue')
+            #         plt.plot(np.arange(0, i+1, params.valid_every),
+            #                  valid_nlls, label='Validation', c='orange',
+            #                  linestyle='--')
+            #         plt.legend()
+            #         plt.xlabel('Epochs')
+            #         plt.ylabel('NLL')
+            #         plt.savefig(join(params.result_dir, 'training_nll.png'))
+            #         plt.close()
+            #
+            #         fig, ax1 = plt.subplots()
+            #         ax1.set_ylabel('KL')
+            #         ax1.set_xlabel('Epochs')
+            #         ax1.plot(np.arange(0, i+1), train_kls, label='Training',
+            #                  c='blue')
+            #         ax1.plot(np.arange(0, i+1, params.valid_every),
+            #                  valid_kls, label='Validation', c='orange',
+            #                  linestyle='--')
+            #         if params.kl_anneal:
+            #             ax2 = ax1.twinx()
+            #             ax2.set_ylabel('KL Weight')
+            #             ax2.set_ylim(0, 1)
+            #             ep = np.arange(0, i+1)
+            #             weights = 1/(1+np.exp(-params.kl_anneal_k*(
+            #                     ep-params.kl_anneal_x0)))
+            #             ax2.plot(ep, weights, label='KL weight', c='r')
+            #         plt.savefig(join(params.result_dir, 'training_kl.png'))
+            #         plt.close()
 
             if i % params.checkpoint_every == 0:
                 enc_path = join(params.checkpoint_dir, 'encoder_{}.pt'.format(i))
@@ -234,9 +234,9 @@ def train(train_sequence, valid_sequence, encoder, decoder, loss_fn, params):
         np.save(join(params.result_dir, 'train_loss.npy'), np.array(train_nlls))
         np.save(join(params.result_dir, 'train_kl.npy'), np.array(train_kls))
         np.save(join(params.result_dir, 'train_nll.npy'), np.array(train_nlls))
-        np.save(join(params.result_dir, 'valid_loss.npy'), np.array(valid_losses))
-        np.save(join(params.result_dir, 'valid_kl.npy'), np.array(valid_kls))
-        np.save(join(params.result_dir, 'valid_nll.npy'), np.array(valid_nlls))
+        # np.save(join(params.result_dir, 'valid_loss.npy'), np.array(valid_losses))
+        # np.save(join(params.result_dir, 'valid_kl.npy'), np.array(valid_kls))
+        # np.save(join(params.result_dir, 'valid_nll.npy'), np.array(valid_nlls))
 
     print('Training complete, final loss: {}, time taken: {}\n'.format(
         train_losses[-1], str(datetime.datetime.now() - start)))
