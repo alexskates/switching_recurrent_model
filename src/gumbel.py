@@ -149,27 +149,31 @@ def main(params):
     train_sequences = SequenceData(
         params.data_dir, filenames=train_fns, seq_length=params.seq_length)
 
-    valid_dir = os.path.join(params.data_dir, 'valid')
-    valid_fns = [os.path.join(valid_dir, fn) for fn in os.listdir(
-        valid_dir) if
-                 fn[:2] != '__']
-    assert len(valid_fns) > 0, 'No validation files exist'
-    valid_sequences = SequenceData(
-        params.data_dir, filenames=valid_fns, seq_length=params.seq_length)
+    # valid_dir = os.path.join(params.data_dir, 'valid')
+    # valid_fns = [os.path.join(valid_dir, fn) for fn in os.listdir(
+    #     valid_dir) if
+    #              fn[:2] != '__']
+    # assert len(valid_fns) > 0, 'No validation files exist'
+    # valid_sequences = SequenceData(
+    #     params.data_dir, filenames=valid_fns, seq_length=params.seq_length)
 
     params.n_input = train_sequences.data_dim
 
     encoder, decoder = init(train_sequences._xs, params)
 
     if params.train:
-        train(train_sequences, valid_sequences, encoder, decoder, gumbel_vfe, params)
+        train(train_sequences, None, encoder, decoder, gumbel_vfe, params)
+        # clear train_sequences from memory
+        del train_sequences
 
     if params.infer:
         test_dir = os.path.join(params.data_dir, 'test')
         test_fns = [os.path.join('test', fn) for fn in os.listdir(test_dir) if
                     fn[:2] != '__']
-        assert len(test_fns) > 0, 'No evaluation files exist'
-        test_sequences = SequenceData(params.data_dir, filenames=test_fns)
+        if len(test_fns) == 0:
+            test_sequences = SequenceData(params.data_dir, filenames=train_fns)
+        else:
+            test_sequences = SequenceData(params.data_dir, filenames=test_fns)
         infer(test_sequences, encoder, decoder, gumbel_vfe, nll, params)
 
     if params.sample:
