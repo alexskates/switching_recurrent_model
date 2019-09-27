@@ -96,6 +96,7 @@ def main(params):
         model_dir = params.result_dir
         cov_fn = params.cov_fn
         lr = params.lr
+        cuda = params.cuda
 
         # Load params to ensure that we're using the same params
         with open(os.path.join(params.result_dir, 'params.json')) as f:
@@ -121,6 +122,7 @@ def main(params):
         params.decoder_fn = decoder_fn
         params.cov_fn = cov_fn
         params.lr = lr
+        params.cuda = cuda
     else:
         if not os.path.exists(params.result_dir):
             os.makedirs(params.result_dir)
@@ -142,9 +144,12 @@ def main(params):
         os.makedirs(params.checkpoint_dir)
 
     train_dir = os.path.join(params.data_dir, 'train')
-    train_fns = [os.path.join(train_dir, fn) for fn in os.listdir(
-        train_dir) if
-                 fn[:2] != '__']
+    if params.data_fn is '':
+        train_fns = [os.path.join(train_dir, fn) for fn in os.listdir(
+            train_dir) if
+                     fn[:2] != '__']
+    else:
+        train_fns = [os.path.join(train_dir, params.data_fn)]
     assert len(train_fns) > 0, 'No training files exist'
     train_sequences = SequenceData(
         params.data_dir, filenames=train_fns, seq_length=params.seq_length)
@@ -167,13 +172,13 @@ def main(params):
         del train_sequences
 
     if params.infer:
-        test_dir = os.path.join(params.data_dir, 'test')
-        test_fns = [os.path.join('test', fn) for fn in os.listdir(test_dir) if
-                    fn[:2] != '__']
-        if len(test_fns) == 0:
-            test_sequences = SequenceData(params.data_dir, filenames=train_fns)
-        else:
-            test_sequences = SequenceData(params.data_dir, filenames=test_fns)
+        # test_dir = os.path.join(params.data_dir, 'test')
+        # test_fns = [os.path.join('test', fn) for fn in os.listdir(test_dir) if
+        #             fn[:2] != '__']
+        # if len(test_fns) == 0:
+        test_sequences = SequenceData(params.data_dir, filenames=train_fns)
+        # else:
+        #     test_sequences = SequenceData(params.data_dir, filenames=test_fns)
         infer(test_sequences, encoder, decoder, gumbel_vfe, nll, params)
 
     if params.sample:
@@ -191,7 +196,7 @@ if __name__ == "__main__":
     default_result = os.path.join(dir_, 'results', str(int(time.time())))
 
     parser.add_argument('--data-dir',           '-d', default=default_data)
-    parser.add_argument('--data-fn',            '-f', default='data.npy')
+    parser.add_argument('--data-fn',            '-f', default='')
     parser.add_argument('--encoder-fn',       '-enc', default=None)
     parser.add_argument('--decoder-fn',       '-dec', default=None)
     parser.add_argument('--cov-fn',             '-c', default=None)
