@@ -2,6 +2,7 @@ import torch
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
+from utils import loglik_mixture
 import torch.nn as nn
 import numpy as np
 import torch.optim as optim
@@ -348,6 +349,58 @@ def infer(eval_sequence, encoder, decoder, loss_fn, nll_fn, params):
     if hasattr(params, 'prior') and params.prior == 'markov':
         np.save(join(params.result_dir, 'trans_prob.npy'),
                 decoder.prior.trans_prob().data.cpu().numpy())
+#
+#
+# # Get the joint probability
+# def joint(data_sequence, state_sequence, decoder, encoder, params):
+#
+#     # If dropout is being used, turn off
+#     encoder.eval()
+#     decoder.eval()
+#
+#     # Load the data and state sequence into the dataloader
+#     data_loader = DataLoader(data_sequence, batch_size=len(data_sequence),
+#                              shuffle=False)
+#
+#     state_loader = DataLoader(state_sequence, batch_size=len(state_sequence),
+#                              shuffle=False)
+#
+#     lls = np.empty(shape=(len(state_sequence), state_sequence.seq_length))
+#     transitions = np.empty(shape=(len(state_sequence), state_sequence.seq_length))
+#
+#     temp = torch.Tensor([params.temp])
+#     if params.cuda:
+#         temp = temp.cuda()
+#
+#     for b, x_seq, z_seq in enumerate(zip(iter(data_loader), iter(state_loader))):
+#         h = encoder.init_hidden(x_seq.shape[0])
+#         h_0 = decoder.init_hidden(x_seq.shape[0])
+#
+#         for i, x, z in enumerate(zip(
+#                 x_seq.split(params.net_length, 1),
+#                 z_seq.split(params.net_length, 1))):
+#
+#             if h_0 is not None:
+#                 if type(h_0)in (list, tuple):
+#                     h_0 = [Variable(h_0_element.data) for h_0_element in h_0]
+#                 else:
+#                     h_0 = Variable(h_0.data)
+#
+#             if params.cuda:
+#                 x = x.cuda()
+#                 z = z.cuda()
+#                 if h_0 is not None:
+#                     if type(h_0) in (list, tuple):
+#                         h_0 = [h_0_element.cuda() for h_0_element in h_0]
+#                     else:
+#                         h_0 = h_0.cuda()
+#
+#             c, p, h_0 = decoder(z, h_0)
+#
+#             ll = loglik_mixture(x.contiguous(), z.contiguous(), c)
+#             torch.argmax(z, -1)[:, 1:]
+
+
 
 
 # Sample from a category and starting letter
