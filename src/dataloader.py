@@ -7,7 +7,8 @@ import os
 class SequenceData(Dataset):
 
     def __init__(self, folder_dataset, filenames=['data.npy'],
-                 seq_length=0, transform=None):
+                 seq_length=0, transform=None, valid=False,
+                 is_validation=False):
         self._xs_all = []
         self._xs = []
 
@@ -49,6 +50,17 @@ class SequenceData(Dataset):
 
         self.data_dim = self._xs.shape[-1]
         self.data_len = min([x.shape[0] for x in self._xs_all])
+
+
+        if valid:
+            n = int(len(self._xs) * 0.8)
+            if is_validation:
+                self._xs = self._xs[n:]
+            else:
+                self._xs = self._xs[:n]
+                self.validation = SequenceData(folder_dataset, filenames,
+                                               seq_length, transform,
+                                               valid=True, is_validation=True)
 
     # Give pytorch access to sequences
     def __getitem__(self, index):
